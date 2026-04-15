@@ -1,0 +1,52 @@
+# ============================================================
+# POC-1 Configuration — Benchmark VLMs on ViInfographicVQA
+# ============================================================
+
+seed: 42
+split: "test"
+
+# Dev mode: dùng N mẫu nhỏ để test pipeline nhanh
+dev_mode: false
+dev_samples: 20
+
+# Output directories
+output_dir: "results"
+log_dir: "logs"
+
+# ── Dataset ─────────────────────────────────────────────────
+# data_root: thư mục đã tải bằng: hf download duytranus/ViInfographicVQA --repo-type=dataset --local-dir ./data
+# json_files: danh sách file JSON cần đọc (nằm trong data_root/data/)
+dataset:
+  data_root: "data"
+  json_files:
+    - "single_test.json"
+    # - "multi_test.json"      # bỏ comment nếu muốn thêm multi-image test
+
+# ── Inference ───────────────────────────────────────────────
+inference:
+  max_new_tokens: 128
+  device: "cuda"              # "cpu" nếu không có GPU
+
+# ── Models ──────────────────────────────────────────────────
+# enabled: false → bỏ qua model đó khi chạy
+# type: phải match với adapter registry trong runner.py
+models:
+  vintern-1b:
+    hf_id: "5CD-AI/Vintern-1B-v3_5"
+    type: "vintern"
+    enabled: true
+
+  vintern-3b:
+    hf_id: "5CD-AI/Vintern-3B-R-beta"
+    type: "vintern"
+    enabled: true
+
+  qwen25vl-7b:
+    hf_id: "Qwen/Qwen2.5-VL-7B-Instruct"
+    type: "qwen"
+    enabled: true
+
+  qwen3vl-4b:
+    hf_id: "Qwen/Qwen3-VL-4B-Instruct"
+    type: "qwen"
+    enabled: false            # chưa stable, tắt trước
