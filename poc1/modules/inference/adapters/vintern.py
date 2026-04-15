@@ -136,18 +136,9 @@ class VinternAdapter(VLMAdapter):
         # `all_tied_weights_keys` mà transformers >= 4.48 yêu cầu khi
         # dùng device_map. Vintern-1B/3B đủ nhỏ để fit trên 1 GPU,
         # nên load thẳng bằng .to(device) an toàn hơn.
-        import torch
-
-        _orig_getattr = torch.nn.Module.__getattr__
-        def _patched_getattr(self, name):
-            if name == "all_tied_weights_keys":
-                return {}
-            return _orig_getattr(self, name)
-        torch.nn.Module.__getattr__ = _patched_getattr
-
         self.model = AutoModel.from_pretrained(
             self.hf_id,
-            dtype=torch.bfloat16,       # dùng `dtype` thay vì `torch_dtype` (deprecated)
+            torch_dtype=torch.bfloat16,
             trust_remote_code=True,
             use_flash_attn=False,        # tắt flash-attn để tránh lỗi trên GPU không support
             low_cpu_mem_usage=True,      # giảm RAM khi load weights

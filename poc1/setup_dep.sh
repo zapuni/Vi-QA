@@ -47,7 +47,7 @@ echo "[3/3] Cài VLM utils, metrics và các thư viện phụ trợ..."
 pip install \
     "qwen-vl-utils==0.0.11" \
     "pillow==11.2.1" \
-    "python-Levenshtein==0.27.0" \
+    "python-Levenshtein==0.27.1" \
     "rapidfuzz==3.12.2" \
     "tqdm==4.67.1" \
     "matplotlib==3.10.1" \

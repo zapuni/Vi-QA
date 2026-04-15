@@ -3,18 +3,18 @@ modules/inference/adapters/qwen.py
 ===================================
 Trách nhiệm DUY NHẤT: Wrap Qwen2.5-VL và Qwen3-VL theo interface VLMAdapter.
 
-Khác biệt quan trọng giữa 2 phiên bản:
-  - Qwen2.5-VL: Qwen2VLForConditionalGeneration
-  - Qwen3-VL:   Qwen3VLForConditionalGeneration  (import khác nhau)
+Khác biệt quan trọng giữa các phiên bản:
+  - Qwen2-VL:   Qwen2VLForConditionalGeneration
+  - Qwen2.5-VL: Qwen2_5_VLForConditionalGeneration  (class riêng!)
+  - Qwen3-VL:   Qwen3VLForConditionalGeneration
 
-Cả hai đều dùng AutoProcessor và qwen_vl_utils.process_vision_info
+Cả ba đều dùng AutoProcessor và qwen_vl_utils.process_vision_info
 để xử lý image input.
 """
 
 from __future__ import annotations
 
 import logging
-
 from typing import TYPE_CHECKING
 
 import torch
@@ -24,6 +24,8 @@ from modules.inference.base import VLMAdapter
 
 if TYPE_CHECKING:
     from PIL.Image import Image as PILImage
+
+log = logging.getLogger("poc1")
 
 # ── Prompt ───────────────────────────────────────────────────────────
 SYSTEM_PROMPT = (
@@ -37,26 +39,46 @@ SYSTEM_PROMPT = (
 
 def _load_qwen_model(hf_id: str):
     """
-    Load Qwen2.5-VL hoặc Qwen3-VL tùy theo tên model.
-    Dùng device_map="auto" để tự phân phối vào GPU/CPU.
+    Load Qwen2-VL, Qwen2.5-VL hoặc Qwen3-VL tùy theo tên model.
+
+    Phân biệt model class dựa trên tên HF ID:
+      - "Qwen3"   → Qwen3VLForConditionalGeneration
+      - "Qwen2.5" → Qwen2_5_VLForConditionalGeneration
+      - còn lại   → Qwen2VLForConditionalGeneration (Qwen2-VL gốc)
     """
+    cls = None
+
     if "Qwen3" in hf_id:
         try:
             from transformers import Qwen3VLForConditionalGeneration
             cls = Qwen3VLForConditionalGeneration
+            log.info(f"[QwenVLAdapter] Using Qwen3VLForConditionalGeneration")
         except ImportError:
-            # Fallback nếu version transformers chưa có Qwen3VL
-            logging.getLogger("poc1").info("[QwenVLAdapter] Warning: Qwen3VL class not found, falling back to Qwen2VL")
-            from transformers import Qwen2VLForConditionalGeneration
-            cls = Qwen2VLForConditionalGeneration
-    else:
+            log.warning(
+                "[QwenVLAdapter] Qwen3VL class not found in transformers, "
+                "falling back to Qwen2.5-VL class"
+            )
+
+    if cls is None and "Qwen2.5" in hf_id:
+        try:
+            from transformers import Qwen2_5_VLForConditionalGeneration
+            cls = Qwen2_5_VLForConditionalGeneration
+            log.info(f"[QwenVLAdapter] Using Qwen2_5_VLForConditionalGeneration")
+        except ImportError:
+            log.warning(
+                "[QwenVLAdapter] Qwen2_5_VL class not found in transformers, "
+                "falling back to Qwen2VL class"
+            )
+
+    if cls is None:
         from transformers import Qwen2VLForConditionalGeneration
         cls = Qwen2VLForConditionalGeneration
+        log.info(f"[QwenVLAdapter] Using Qwen2VLForConditionalGeneration")
 
     return cls.from_pretrained(
         hf_id,
-        dtype="auto",           # tự chọn dtype tốt nhất (bfloat16 trên Ampere+)
-        device_map="auto",      # Qwen model class chính thức → hỗ trợ device_map tốt
+        torch_dtype=torch.bfloat16,   # tương thích mọi phiên bản transformers
+        device_map="auto",
         low_cpu_mem_usage=True,
     ).eval()
 
@@ -67,11 +89,11 @@ class QwenVLAdapter(VLMAdapter):
     """Adapter cho Qwen2.5-VL-7B và Qwen3-VL-4B."""
 
     def load(self) -> None:
-        logging.getLogger("poc1").info(f"[QwenVLAdapter] Loading {self.hf_id} …")
+        log.info(f"[QwenVLAdapter] Loading {self.hf_id} …")
         self.model     = _load_qwen_model(self.hf_id)
         self.processor = AutoProcessor.from_pretrained(self.hf_id)
         self._device   = next(self.model.parameters()).device
-        logging.getLogger("poc1").info(f"[QwenVLAdapter] ✔ Loaded on {self._device}")
+        log.info(f"[QwenVLAdapter] ✔ Loaded on {self._device}")
 
     def infer(self, image: "PILImage", question: str) -> str:
         from qwen_vl_utils import process_vision_info
