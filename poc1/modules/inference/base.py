@@ -22,6 +22,25 @@ if TYPE_CHECKING:
     from PIL.Image import Image as PILImage
 
 
+def release_torch_memory(tag: str | None = None) -> None:
+    """Best-effort cleanup for CUDA/CPU memory between model runs."""
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            # Return cached blocks to driver when possible.
+            if torch.cuda.is_initialized():
+                torch.cuda.ipc_collect()
+    except Exception as exc:
+        logging.getLogger("poc1").debug(f"[memory] cleanup warning: {exc}")
+        return
+
+    if tag:
+        logging.getLogger("poc1").info(f"[memory] Freed cache ({tag})")
+
+
 class VLMAdapter(ABC):
     """
     Abstract base class cho tất cả VLM adapters.
@@ -72,7 +91,6 @@ class VLMAdapter(ABC):
         Override nếu model cần cleanup đặc biệt.
         """
         try:
-            import torch
             if self.model is not None:
                 del self.model
                 self.model = None
@@ -82,9 +100,7 @@ class VLMAdapter(ABC):
             if self.tokenizer is not None:
                 del self.tokenizer
                 self.tokenizer = None
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            gc.collect()
+            release_torch_memory(tag=self.model_key)
             logging.getLogger("poc1").info(f"[{self.model_key}] ✔ Model unloaded, VRAM freed")
         except Exception as e:
             logging.getLogger("poc1").info(f"[{self.model_key}] Warning: unload error: {e}")

@@ -22,7 +22,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from modules.inference.base import VLMAdapter
+from modules.inference.base import VLMAdapter, release_torch_memory
 
 # ── Registry: map type string → adapter class path ───────────────────
 # Thêm model mới: chỉ cần thêm 1 dòng ở đây
@@ -99,44 +99,46 @@ def run(
         return str(out_path)
 
     # ── Load model ───────────────────────────────────────────────────
+    release_torch_memory(tag=f"{model_key}/before-load")
     AdapterClass = _import_adapter(model_cfg["type"])
     adapter: VLMAdapter = AdapterClass(
         model_key=model_key,
         hf_id=model_cfg["hf_id"],
         cfg=cfg,
     )
-    adapter.load()
 
     # ── Inference loop ───────────────────────────────────────────────
     errors = 0
-    with open(out_path, "a", encoding="utf-8") as fout:
-        for sample in tqdm(pending, desc=f"[{model_key}]", unit="sample"):
-            t0 = time.perf_counter()
-            try:
-                prediction = adapter.infer(sample["image"], sample["question"])
-                error_msg  = None
-            except Exception as exc:
-                prediction = ""
-                error_msg  = str(exc)
-                errors += 1
+    try:
+        adapter.load()
+        with open(out_path, "a", encoding="utf-8") as fout:
+            for sample in tqdm(pending, desc=f"[{model_key}]", unit="sample"):
+                t0 = time.perf_counter()
+                try:
+                    prediction = adapter.infer(sample["image"], sample["question"])
+                    error_msg  = None
+                except Exception as exc:
+                    prediction = ""
+                    error_msg  = str(exc)
+                    errors += 1
 
-            latency = round(time.perf_counter() - t0, 4)
+                latency = round(time.perf_counter() - t0, 4)
 
-            record = {
-                "id":            sample["id"],
-                "question":      sample["question"],
-                "ground_truth":  sample["answer"],
-                "prediction":    prediction,
-                "latency":       latency,
-                "answer_source": sample["answer_source"],
-                "domain":        sample["domain"],
-                "error":         error_msg,
-            }
-            fout.write(json.dumps(record, ensure_ascii=False) + "\n")
-            fout.flush()   # flush sau mỗi dòng để không mất data nếu crash
-
-    # ── Cleanup ──────────────────────────────────────────────────────
-    adapter.unload()
+                record = {
+                    "id":            sample["id"],
+                    "question":      sample["question"],
+                    "ground_truth":  sample["answer"],
+                    "prediction":    prediction,
+                    "latency":       latency,
+                    "answer_source": sample["answer_source"],
+                    "domain":        sample["domain"],
+                    "error":         error_msg,
+                }
+                fout.write(json.dumps(record, ensure_ascii=False) + "\n")
+                fout.flush()   # flush sau mỗi dòng để không mất data nếu crash
+    finally:
+        adapter.unload()
+        release_torch_memory(tag=f"{model_key}/after-unload")
 
     total = len(done_ids) + len(pending)
     logging.getLogger("poc1").info(

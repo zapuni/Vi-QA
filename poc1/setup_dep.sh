@@ -34,7 +34,7 @@ pip install \
 # -----------------------------------------------------------
 echo "[2/3] Cài Hugging Face Ecosystem..."
 pip install \
-    "transformers==4.50.3" \
+    "transformers==4.57.1" \
     "accelerate==1.6.0" \
     "peft==0.15.2" \
     "trl==0.16.1" \
