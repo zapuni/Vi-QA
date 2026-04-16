@@ -1,0 +1,36 @@
+[project]
+name = "Vi-QA"
+version = "0.1.0"
+description = "Benchmark and Evaluation for ViInfographicVQA (POC 1 & POC 2)"
+requires-python = ">=3.10"
+dependencies = [
+    "torch==2.7.0",
+    "torchvision==0.22.0",
+    "transformers==4.57.1",         # Hỗ trợ Qwen2.5-VL và các VLMs mới
+    "accelerate==1.6.0",           # Bắt buộc khi dùng device_map="auto"
+    "qwen-vl-utils==0.0.11",        # Tiện ích riêng của Qwen-VL
+    "pillow==11.2.1",               # Đọc ảnh local từ dataset
+    "python-Levenshtein==0.27.1",   # Metric ANLS
+    "rapidfuzz==3.12.2",             # Cần cho ANLS tối ưu (tác giả gốc thường dùng)
+    "tqdm==4.67.1",                 # Tiến trình
+    "matplotlib==3.10.1",            # Vẽ biểu đồ reporting
+    "pyyaml==6.0.2",                  # Đọc yaml config
+    "timm==1.0.15",                  # Cần cho InternVL / Vintern feature extraction
+    "einops==0.8.1",                # Tensor operations (InternVL)
+    "peft==0.15.2",                 # Cho POC 2 - Fine-tuning LoRA
+    "trl==0.16.1",                  # Cho POC 2 - Fine-tuning
+    "bitsandbytes==0.45.4",         # Quantized training
+]
+
+[tool.uv]
+package = false # Không build project này thành một Python package có thể install được
+
+# Chỉ định PyTorch URL cho CUDA 12.8 (cu128) để support RTX 5090 Blackwell
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
