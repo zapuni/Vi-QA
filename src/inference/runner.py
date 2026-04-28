@@ -8,6 +8,9 @@ Tính năng quan trọng:
     → nếu bị kill giữa chừng, chạy lại sẽ skip các mẫu đã xong
   - Đo latency mỗi sample (wall-clock time perf_counter)
   - Dynamic import adapter → không load model không cần dùng
+  - Lazy image loading + prefetch qua ImageProvider
+    → ảnh chỉ load khi cần, prefetch trước N ảnh tiếp theo,
+      giải phóng ngay sau khi inference xong
 
 Output: results/{model_key}/predictions.jsonl
 """
@@ -22,6 +25,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
+from src.data.image_provider import ImageProvider
 from src.inference.base import VLMAdapter, release_torch_memory
 
 # ── Registry: map type string → adapter class path ───────────────────
@@ -74,7 +78,7 @@ def run(
     Args:
         model_key:  Tên key model (vd: "vintern-1b").
         model_cfg:  cfg["models"][model_key] từ config yaml.
-        samples:    list[dict] đã chuẩn hóa từ loader.
+        samples:    list[dict] đã chuẩn hóa từ loader (chỉ metadata + paths).
         cfg:        Full config dict.
 
     Returns:
@@ -107,20 +111,45 @@ def run(
         cfg=cfg,
     )
 
+    # ── Image Provider: lazy load + prefetch ─────────────────────────
+    prefetch_cfg = cfg.get("inference", {}).get("image_loading", {})
+    prefetch_size = prefetch_cfg.get("prefetch_size", 32)
+    max_workers = prefetch_cfg.get("max_workers", 2)
+    max_cached = prefetch_cfg.get("max_cached", 64)
+
+    provider = ImageProvider(
+        prefetch_size=prefetch_size,
+        max_workers=max_workers,
+        max_cached=max_cached,
+    )
+    logging.getLogger("poc1").info(
+        f"[runner/{model_key}] ImageProvider: "
+        f"prefetch_size={prefetch_size}, max_workers={max_workers}, "
+        f"max_cached={max_cached}"
+    )
+
     # ── Inference loop ───────────────────────────────────────────────
     errors = 0
     try:
         adapter.load()
         with open(out_path, "a", encoding="utf-8") as fout:
-            for sample in tqdm(pending, desc=f"[{model_key}]", unit="sample"):
+            for i, sample in enumerate(tqdm(pending, desc=f"[{model_key}]", unit="sample")):
+                # Prefetch ảnh cho các sample tiếp theo
+                provider.schedule_batch(pending, i + 1)
+
                 t0 = time.perf_counter()
                 try:
-                    prediction = adapter.infer(sample["image"], sample["question"])
+                    # Load ảnh on-demand (instant nếu đã prefetch)
+                    images = provider.get(sample["image_paths"])
+                    prediction = adapter.infer(images, sample["question"])
                     error_msg  = None
                 except Exception as exc:
                     prediction = ""
                     error_msg  = str(exc)
                     errors += 1
+                finally:
+                    # Giải phóng ảnh ngay sau khi xử lý xong
+                    provider.release(sample["image_paths"])
 
                 latency = round(time.perf_counter() - t0, 4)
 
@@ -138,6 +167,7 @@ def run(
                 fout.flush()   # flush sau mỗi dòng để không mất data nếu crash
     finally:
         adapter.unload()
+        provider.shutdown()
         release_torch_memory(tag=f"{model_key}/after-unload")
 
     total = len(done_ids) + len(pending)
@@ -146,3 +176,4 @@ def run(
         f"(errors: {errors}) → {out_path}"
     )
     return str(out_path)
+

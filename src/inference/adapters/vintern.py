@@ -159,9 +159,16 @@ class VinternAdapter(VLMAdapter):
         tensor = torch.stack([self._transform(t) for t in tiles])
         return tensor.to(torch.bfloat16).to(self._device)
 
-    def infer(self, image: "PILImage", question: str) -> str:
-        pixel_values = self._preprocess(image)
-        prompt = f"{SYSTEM_PROMPT}\n<image>\nQuestion: {question}\nAnswer:"
+    def infer(self, images: list["PILImage"], question: str) -> str:
+        # Preprocess từng ảnh rồi concat tất cả tiles
+        all_tiles = []
+        for img in images:
+            all_tiles.append(self._preprocess(img))
+        pixel_values = torch.cat(all_tiles, dim=0)
+
+        # Prompt: mỗi ảnh cần 1 tag <image>
+        image_tags = "\n".join(["<image>"] * len(images))
+        prompt = f"{SYSTEM_PROMPT}\n{image_tags}\nQuestion: {question}\nAnswer:"
         max_new = self.cfg["inference"]["max_new_tokens"]
 
         gen_cfg = {

@@ -1,8 +1,12 @@
 """
 src/data/loader.py
 ======================
-Trách nhiệm DUY NHẤT: Load dataset từ file JSON local + ảnh local,
+Trách nhiệm DUY NHẤT: Load dataset từ file JSON local,
 chuẩn hóa thành list[dict] với keys nhất quán.
+
+**QUAN TRỌNG**: Module này KHÔNG load ảnh PIL vào RAM.
+Chỉ lưu đường dẫn tuyệt đối (image_paths) để downstream
+code (runner.py) load on-demand qua ImageProvider.
 
 Dataset được tải thủ công bằng `hf download` vào thư mục `data/`.
 Cấu trúc thư mục:
@@ -17,25 +21,40 @@ Cấu trúc thư mục:
         ├── 5707.jpg
         └── ...
 
-Mỗi entry trong JSON có dạng:
+Hỗ trợ 2 format JSON:
+
+  Single-image (single_*.json):
     {
         "question_id": "47438",
-        "image_type": "Dự báo thời tiết",      ← domain
+        "image_type": "Dự báo thời tiết",
         "answer_source": "multi-span",
         "element": "Visual/Layout",
         "question": "...",
         "answer": "...",
-        "image_path": "images/4813.jpg"         ← relative path
+        "image_path": "images/4813.jpg"         ← string đơn
+    }
+
+  Multi-image (multi_*.json):
+    {
+        "question_id": "5560",
+        "image_paths": [                         ← list of strings
+            "images/18777.jpg",
+            "images/18779.jpg",
+            "images/18787.jpg"
+        ],
+        "image_type": "Thể thao - Nghệ thuật",
+        "answer_source": "Cross-Image Synthesis",
+        "question": "...",
+        "answer": "..."
     }
 
 Keys trả ra (chuẩn hóa):
     id            – str  (question_id)
-    image         – PIL.Image.Image (RGB)
+    image_paths   – list[str]  (đường dẫn tuyệt đối tới từng ảnh)
     question      – str
     answer        – str  (ground truth)
-    answer_source – str  ("image-span" | "question-span" | "multi-span" | "non-extractive")
+    answer_source – str
     domain        – str  (image_type)
-    image_path    – str  (đường dẫn tuyệt đối tới ảnh)
 """
 
 from __future__ import annotations
@@ -45,34 +64,64 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from PIL import Image
-
 log = logging.getLogger("poc1")
 
 
+def _validate_image_paths(image_paths: list[str], data_root: Path) -> list[str]:
+    """
+    Validate và build absolute paths cho danh sách ảnh.
+
+    KHÔNG load PIL Images — chỉ kiểm tra file tồn tại.
+    Ảnh sẽ được load on-demand bởi ImageProvider khi cần.
+
+    Args:
+        image_paths: Danh sách relative paths (vd: ["images/4813.jpg"])
+        data_root:   Thư mục gốc chứa images/
+
+    Returns:
+        list[str] absolute paths
+    """
+    abs_paths = []
+    for rel_path in image_paths:
+        abs_path = data_root / rel_path
+        if not abs_path.exists():
+            raise FileNotFoundError(f"Image not found: {abs_path}")
+        abs_paths.append(str(abs_path))
+    return abs_paths
+
+
 def _normalize(item: dict, data_root: Path) -> dict:
-    """Chuẩn hóa 1 sample từ JSON dict thành dict chuẩn."""
-    # Xây dựng đường dẫn ảnh tuyệt đối
-    # image_path trong JSON là relative, ví dụ: "images/4813.jpg"
-    # data_root là thư mục gốc chứa data/, images/ (ví dụ: data/)
-    image_rel = item["image_path"]
-    image_abs = data_root / image_rel
+    """Chuẩn hóa 1 sample từ JSON dict thành dict chuẩn.
 
-    if not image_abs.exists():
-        raise FileNotFoundError(f"Image not found: {image_abs}")
+    Tự động phát hiện format:
+      - Nếu có key "image_paths" (list) → multi-image
+      - Nếu có key "image_path" (str)  → single-image, wrap thành list
 
-    image = Image.open(image_abs)
-    if image.mode != "RGB":
-        image = image.convert("RGB")
+    LƯU Ý: Trả về image_paths (strings) thay vì PIL Images.
+    Ảnh sẽ được load lazy bởi ImageProvider trong runner.py.
+    """
+    # Xác định danh sách relative image paths
+    if "image_paths" in item:
+        # Multi-image format: image_paths là list
+        rel_paths = item["image_paths"]
+    elif "image_path" in item:
+        # Single-image format: image_path là string → wrap thành list
+        rel_paths = [item["image_path"]]
+    else:
+        raise KeyError(
+            f"Record {item.get('question_id', '?')} thiếu cả "
+            f"'image_path' lẫn 'image_paths'"
+        )
+
+    abs_paths = _validate_image_paths(rel_paths, data_root)
 
     return {
         "id":            str(item["question_id"]),
-        "image":         image,
+        "image_paths":   abs_paths,     # list[str] — chỉ lưu paths, KHÔNG load PIL
         "question":      str(item["question"]).strip(),
         "answer":        str(item["answer"]).strip(),
         "answer_source": str(item.get("answer_source", "unknown")),
         "domain":        str(item.get("image_type", "unknown")),
-        "image_path":    str(image_abs),
     }
 
 
@@ -126,9 +175,16 @@ def load(cfg: dict) -> list[dict]:
     # Chuẩn hóa tất cả records
     samples = []
     skipped = 0
+    single_count = 0
+    multi_count = 0
     for i, item in enumerate(all_records):
         try:
-            samples.append(_normalize(item, data_root))
+            sample = _normalize(item, data_root)
+            samples.append(sample)
+            if len(sample["image_paths"]) == 1:
+                single_count += 1
+            else:
+                multi_count += 1
         except Exception as e:
             log.warning(f"[data/loader] Skip record {i}: {e}")
             skipped += 1
@@ -138,6 +194,7 @@ def load(cfg: dict) -> list[dict]:
 
     log.info(
         f"[data/loader] ✔ {len(samples)} samples loaded "
-        f"(split='{split}', files={json_files})"
+        f"(single={single_count}, multi={multi_count}, "
+        f"split='{split}', files={json_files})"
     )
     return samples

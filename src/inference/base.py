@@ -72,12 +72,14 @@ class VLMAdapter(ABC):
         ...
 
     @abstractmethod
-    def infer(self, image: "PILImage", question: str) -> str:
+    def infer(self, images: list["PILImage"], question: str) -> str:
         """
         Chạy inference trả về answer string.
 
         Args:
-            image:    PIL Image (đã ở mode RGB).
+            images:   Danh sách PIL Images (đã ở mode RGB, load on-demand
+                      bởi ImageProvider — KHÔNG giữ sẵn trong RAM).
+                      Single-image: 1 phần tử. Multi-image: 2-4 phần tử.
             question: Câu hỏi tiếng Việt.
 
         Returns:

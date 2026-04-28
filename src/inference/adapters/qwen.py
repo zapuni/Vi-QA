@@ -95,12 +95,18 @@ class QwenVLAdapter(VLMAdapter):
         self._device   = next(self.model.parameters()).device
         log.info(f"[QwenVLAdapter] ✔ Loaded on {self._device}")
 
-    def infer(self, image: "PILImage", question: str) -> str:
+    def infer(self, images: list["PILImage"], question: str) -> str:
         from qwen_vl_utils import process_vision_info
 
         max_new = self.cfg["inference"]["max_new_tokens"]
 
-        # Qwen chat template: system + image + question
+        # Qwen chat template: system + images (interleaved) + question
+        # Mỗi ảnh là 1 entry {type: "image"} riêng biệt
+        user_content: list[dict] = []
+        for img in images:
+            user_content.append({"type": "image", "image": img})
+        user_content.append({"type": "text", "text": f"Question: {question}\nAnswer:"})
+
         messages = [
             {
                 "role": "system",
@@ -108,10 +114,7 @@ class QwenVLAdapter(VLMAdapter):
             },
             {
                 "role": "user",
-                "content": [
-                    {"type": "image", "image": image},
-                    {"type": "text",  "text": f"Question: {question}\nAnswer:"},
-                ],
+                "content": user_content,
             },
         ]
 

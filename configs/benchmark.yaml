@@ -27,6 +27,14 @@ inference:
   max_new_tokens: 128
   device: "cuda"              # "cpu" nếu không có GPU
 
+  # ── Image Loading (Lazy + Prefetch) ────────────────────────
+  # Thay vì load tất cả ảnh vào RAM cùng lúc (gây tràn RAM),
+  # ImageProvider load ảnh on-demand với prefetch buffer.
+  image_loading:
+    prefetch_size: 8         # Số ảnh prefetch trước trong background threads
+    max_workers: 4            # Số threads đọc disk song song
+    max_cached: 16            # Số ảnh tối đa giữ trong RAM cache (LRU eviction)
+
 # ── Models ──────────────────────────────────────────────────
 # enabled: false → bỏ qua model đó khi chạy
 # type: phải match với adapter registry trong runner.py
