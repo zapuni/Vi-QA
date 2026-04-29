@@ -1,7 +1,7 @@
 [project]
 name = "Vi-QA"
 version = "0.1.0"
-description = "Benchmark and Evaluation for ViInfographicVQA (POC 1 & POC 2)"
+description = "Benchmark, Teacher Data Generation, and SFT Fine-tuning for ViInfographicVQA (POC 1–3)"
 requires-python = ">=3.10"
 dependencies = [
     "torch==2.7.0",
@@ -20,6 +20,12 @@ dependencies = [
     "peft==0.15.2",                 # Cho POC 2 - Fine-tuning LoRA
     "trl==0.16.1",                  # Cho POC 2 - Fine-tuning
     "bitsandbytes==0.45.4",         # Quantized training
+    "huggingface-hub==0.36.2",
+    "openai>=2.0.0",                # POC 2 - vLLM OpenAI-compatible client
+    "pydantic>=2.0.0",              # POC 2 - Schema validation
+    "tenacity>=9.0.0",              # POC 2 - Retry logic
+    "streamlit==1.43.0",
+    "streamlit-drawable-canvas==0.9.3", # Nếu muốn dùng tính năng vẽ BBox
 ]
 
 [tool.uv]
