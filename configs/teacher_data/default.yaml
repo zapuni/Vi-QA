@@ -1,0 +1,43 @@
+# ============================================================
+# Config: Teacher Data Generation — Default
+# ============================================================
+# Cách chạy:
+#   python scripts/run_teacher_build.py --config configs/teacher_data/default.yaml
+#   python scripts/run_teacher_build.py --config configs/teacher_data/default.yaml --subset 20
+
+# ── Teacher Model ───────────────────────────────────────────
+model_name: "Qwen/Qwen3-VL-32B-Thinking"
+base_url: ""
+api_key: "EMPTY"
+
+# ── Generation Params ───────────────────────────────────────
+temperature: 0.0
+max_completion_tokens: 8192
+enable_thinking: true
+stream: true               # Stream response để tránh lỗi 524 timeout từ reverse proxy
+
+# ── Concurrency ─────────────────────────────────────────────
+max_concurrent: 4
+retry_attempts: 3
+retry_backoff: 2.0
+timeout_seconds: 300.0
+
+# ── Dataset ─────────────────────────────────────────────────
+# data_root: thư mục gốc chứa data/ và images/
+# json_files: danh sách file JSON train (nằm trong data_root/data/)
+data_root: "data/ViInfographicVQA"
+json_files:
+  - "single_train.json"
+  - "multi_train.json"   # Multi-image support
+
+# ── Output ──────────────────────────────────────────────────
+output_dir: "data/teacher_runs_20"
+
+# ── Checkpoint ──────────────────────────────────────────────
+checkpoint_interval: 10
+shard_size: 100
+
+# ── Run ─────────────────────────────────────────────────────
+run_id: ""        # Để trống → auto-generate từ timestamp
+seed: 42
+# subset: 20     # Bỏ comment để test nhanh 20 mẫu
